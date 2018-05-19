@@ -1,7 +1,7 @@
 /*
 clonex.c
 
-Version : 0.0.02
+Version : 0.1.23
 Author  : Niko Beerenwinkel
     Moritz Gerstung
 
@@ -88,6 +88,8 @@ void summary_to_tsv(FILE *DB, int gen)
 	for (i=0; i<N_g; i++)
 	{
 		//fprintf(DB, "%d\t%d\t", gen, genotype[i].count);
+		if(genotype[i].k==0)
+			fprintf(DB, "%d\t%d\t%d\t%d\n", gen, genotype[i].count, i+1, 0);
 		for (k=0; k<genotype[i].k; k++)
 		{
 			fprintf(DB, "%d\t%d\t%d\t%d\n", gen, genotype[i].count, i+1, genotype[i].mutation[k]);
@@ -176,20 +178,23 @@ int mutation_cmp (const struct Genotype *g, const struct Genotype *h)
 void remove_duplicates()
 {
 	int i;
-	//#pragma omp parallel for
-	for (i=0; i<N_g; i++)
-		qsort(genotype[i].mutation, genotype[i].k, sizeof(int), (compfunc) int_cmp);  // sort mutation lists
 
-	int split = floor((double)N_g/2);
+	if(N_g > 10000){
+	int split = (int) floor((double)N_g/2);
 
-	#pragma omp parallel num_threads(2)
-	{
+	#pragma omp parallel num_threads(2) // pre-sort on two cores
+		{
+	#pragma omp single
+			{
 	#pragma omp task
-		{qsort(genotype, split, sizeof(struct Genotype), (compfunc) mutation_cmp);}  // sort population
+				{qsort(genotype, split, sizeof(struct Genotype), (compfunc) mutation_cmp);}  // sort population
 	#pragma omp task
-		{qsort(genotype + split, N_g, sizeof(struct Genotype), (compfunc) mutation_cmp);}  // sort population}
+				{qsort(genotype + split, N_g - split, sizeof(struct Genotype), (compfunc) mutation_cmp);}  // sort population}
+			}
+		}
 	}
-	qsort(genotype, N_g, sizeof(struct Genotype), (compfunc) mutation_cmp);  // sort population
+
+	mergesort(genotype, N_g, sizeof(struct Genotype), (compfunc) mutation_cmp);  // sort population
 
 
 	for (i=0; i<N_g-1; i++)
@@ -206,7 +211,21 @@ void remove_duplicates()
 
 }
 
-
+void insert_mutation(struct Genotype *g, int mutation){ // this makes use of the fact that g->mutation is sorted
+	int i=0;
+	int pos = g->k;
+	for(i=0;i<pos;i++){
+		if(g->mutation[i] == mutation) // duplicate; do nothing
+			return;
+		if(g->mutation[i] > mutation)
+			pos=i; // find position to insert, break
+	}
+	(g->k)++; // increment count
+	for(i=g->k -1; i>pos; i--){
+		g->mutation[i] = g->mutation[i-1]; // move one up
+	}
+	g->mutation[pos]=mutation; // insert
+}
 
 int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose)
 {
@@ -359,12 +378,15 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 
 					// add first mutation:
 					mutation = (int) floor(gsl_ran_flat(RNG, a, b));
+					if(mutation > genes) printf("Error!");
 
 
 					//printf("%i\n", mutation);
 
-					genotype[index_mut].mutation[genotype[index_mut].k] = mutation;
-					(genotype[index_mut].k)++;
+					//genotype[index_mut].mutation[genotype[index_mut].k] = mutation;
+					//(genotype[index_mut].k)++;
+
+					insert_mutation(genotype + index_mut, mutation);
 
 
 					// maybe add a second mutation:
@@ -375,11 +397,13 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 					{
 						mutation = (int) floor(gsl_ran_flat(RNG, a, b));
 						//printf("%i\n", mutation);
-						genotype[index_mut].mutation[genotype[index_mut].k] = mutation;
-						(genotype[index_mut].k)++;
+					    //genotype[index_mut].mutation[genotype[index_mut].k] = mutation;
+						//(genotype[index_mut].k)++;
+						insert_mutation(genotype + index_mut, mutation);
 					}
 
 					// remove duplicate mutations (mutation[] is just a list!):
+
 					if (genotype[index_mut].k > 1)
 					{
 						qsort(genotype[index_mut].mutation, genotype[index_mut].k, sizeof(int), (compfunc) int_cmp);
@@ -399,6 +423,7 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 						genotype[index_mut].k = mut_k;
 
 					}
+
 
 
 				}
@@ -481,7 +506,7 @@ int main(int argc, char **argv)
 	int f_flag = 0;
 
 	int c = 0;
-	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:wh")) != EOF )
+	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:o:wh")) != EOF )
 	{
 		switch(c)
 		{
@@ -513,7 +538,7 @@ int main(int argc, char **argv)
 				error_flag++;
 			break;
 
-		case 'q':
+		case 'o':
 			if (atoi(optarg) > 0)
 				d1 = atoi(optarg);
 			else
@@ -576,7 +601,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'h':
-			printf("usage: clonex [-NusgRrh]\n");
+			printf("usage: clonex [-N:n:u:v:s:t:g:R:f:r:p:d:o:wh]\n");
 			printf("  N - Final population size (default = %d)\n", N);
 			printf("  n - Initial population size (default = %d)\n", N_init);
 			printf("  u - Mutation rate (default = %g)\n", u);
@@ -586,7 +611,7 @@ int main(int argc, char **argv)
 			printf("  g - Number of generations (default = %d)\n", g);
 			printf("  d - Number of drivers (default = %d)\n", d);
 			printf("  p - Number of passengers (default = %d)\n", d0);
-			printf("  q - Number of other drivers (default = %d)\n", d1);
+			printf("  o - Number of other drivers (default = %d)\n", d1);
 			printf("  R - Replicates (default = %d)\n", R);
 			printf("  r - Random seed (default = time)\n");
 			printf("  f - File directory (Required! Make sure that the directory exists!)\n");
@@ -636,6 +661,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Cannot open output file -- %s\n", summary_filename);
 			exit(1);
 		}
+		printf("%d\n", genes);
 		//fprintf(DB, "pop <- list(");
 		simulate(DB, N_init, N, g, u, v, s, s1, r+1, genes, d0, d1, verbose);
 		//fprintf(DB, ")");
