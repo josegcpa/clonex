@@ -174,6 +174,17 @@ int mutation_cmp (const struct Genotype *g, const struct Genotype *h)
 
 }
 
+void count_N()
+{
+	int i,j;
+	j=0;
+	for (i=0; i<N_g; i++)
+		{
+			j+=genotype[i].count;
+		}
+	printf("N=%i\n",j);
+
+}
 
 void remove_duplicates()
 {
@@ -196,7 +207,6 @@ void remove_duplicates()
 
 	mergesort(genotype, N_g, sizeof(struct Genotype), (compfunc) mutation_cmp);  // sort population
 
-
 	for (i=0; i<N_g-1; i++)
 	{
 		if (mutation_cmp(&genotype[i], &genotype[i+1]) == 0)  // collect counts
@@ -207,8 +217,6 @@ void remove_duplicates()
 	}
 
 	remove_zeros_fast();
-
-
 }
 
 void insert_mutation(struct Genotype *g, int mutation){ // this makes use of the fact that g->mutation is sorted
@@ -227,7 +235,7 @@ void insert_mutation(struct Genotype *g, int mutation){ // this makes use of the
 	g->mutation[pos]=mutation; // insert
 }
 
-int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose)
+int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose, int G)
 {
 
 	int gen, i, j, c, N; //k;
@@ -438,16 +446,20 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 
 		//fprintf(DB, "%d\t%d\t%d\t%f\t%d\t%d\t%f\n", gen, N, k_min, k_mean, k_max, k_obs, p_more);
 
+		//count_N();
 
 		if (gen % 10 == 0)
 		{
-			remove_duplicates();
-			summary_to_tsv(DB, gen);
 			printf(".");
 			fflush(stdout);
-
 			//if(gen < gen_max)
 			//fprintf(DB, ", ");
+		}
+		if ((gen % G ==0) | (gen == gen_max)){
+		remove_duplicates();
+		summary_to_tsv(DB, gen);
+		printf("\b|");
+		fflush(stdout);
 		}
 		if (gen == gen_max)
 			printf("\n");
@@ -498,6 +510,7 @@ int main(int argc, char **argv)
 	int    d = 1000; // number of driver mutations
 	int    d0 = 0; //number of passengers
 	int    d1 = 0; //number of super drivers
+	int    G = -1; //when to output
 	char *filestem;
 	unsigned int seed = (unsigned) time(NULL);  // r, random seed
 	int verbose = 0;
@@ -506,7 +519,7 @@ int main(int argc, char **argv)
 	int f_flag = 0;
 
 	int c = 0;
-	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:o:wh")) != EOF )
+	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:o:G:wh")) != EOF )
 	{
 		switch(c)
 		{
@@ -596,6 +609,13 @@ int main(int argc, char **argv)
 			seed = atoi(optarg);
 			break;
 
+		case 'G':
+			if (atoi(optarg) >= 0)
+				G = atoi(optarg);
+			else
+				error_flag++;
+			break;
+
 		case 'w':
 			verbose = 1;
 			break;
@@ -605,7 +625,7 @@ int main(int argc, char **argv)
 			printf("  N - Final population size (default = %d)\n", N);
 			printf("  n - Initial population size (default = %d)\n", N_init);
 			printf("  u - Mutation rate (default = %g)\n", u);
-			printf("  v - Mutation rate passengers (default = %g)\n", v);
+			printf("  v - Mutation rate passengers (default = u)\n");
 			printf("  s - Selective advantage (default = %g)\n", s);
 			printf("  t - Selective advantage of other drivers (default = %g)\n", s1);
 			printf("  g - Number of generations (default = %d)\n", g);
@@ -615,6 +635,7 @@ int main(int argc, char **argv)
 			printf("  R - Replicates (default = %d)\n", R);
 			printf("  r - Random seed (default = time)\n");
 			printf("  f - File directory (Required! Make sure that the directory exists!)\n");
+			printf("  G - Output every G generations (default = g)\n");
 			printf("  h - This help\n");
 			exit(0);
 
@@ -622,6 +643,9 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 	}
+
+	if(G == -1)
+		G = g;
 
 	if(v == -1.0)
 		v=u;
@@ -645,7 +669,7 @@ int main(int argc, char **argv)
 	}
 
 
-	char summary_filename[255], filename[255];
+	char summary_filename[255]; //, filename[255];
 
 
 
@@ -663,7 +687,7 @@ int main(int argc, char **argv)
 		}
 		printf("%d\n", genes);
 		//fprintf(DB, "pop <- list(");
-		simulate(DB, N_init, N, g, u, v, s, s1, r+1, genes, d0, d1, verbose);
+		simulate(DB, N_init, N, g, u, v, s, s1, r+1, genes, d0, d1, verbose, G);
 		//fprintf(DB, ")");
 
 		fclose(DB);
