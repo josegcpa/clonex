@@ -137,13 +137,14 @@ void remove_zeros(int total_sort)
 void remove_zeros_fast()
 {
 	int i;
-	for(i=0; i<N_g;i++){
-		if(genotype[i].count==0){
-			while(genotype[N_g-1].count==0) N_g--;
-			genotype[i] = genotype[N_g-1];
-			N_g--;
+		for(i=0; i<N_g;i++){
+			if(genotype[i].count==0){
+				while(genotype[N_g-1].count==0) N_g--;
+				if(N_g == i) break;
+				genotype[i] = genotype[N_g-1];
+				N_g--;
+			}
 		}
-	}
 }
 
 
@@ -235,7 +236,7 @@ void insert_mutation(struct Genotype *g, int mutation){ // this makes use of the
 	g->mutation[pos]=mutation; // insert
 }
 
-int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose, int G)
+int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose, int G)
 {
 
 	int gen, i, j, c, N; //k;
@@ -248,14 +249,14 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 	//int k_min, k_max, k_median;
 	//int k_obs;
 
-	double a = exp( ( log(N_fin) - log(N_init) ) / gen_max );  // exponential growth rate
+	//double a = exp( ( log(N_max) - log(N_init) ) / gen_max );  // exponential growth rate
 	/* ensures growth in gen_max generations from N_init to N_fin */
 
 	//a = exp( log(2) / 60 );  // doubling time is 60 generations
 	//a = exp( log(2) / 30 );  // doubling time is 30 generations
 
-	printf("a = %f\n", a);
-	printf("doubling time = %f generations\n", log(2) / log(a));
+	//printf("a = %f\n", a);
+	printf("doubling time = %f generations\n", log(2) / log(r));
 
 
 	for (j=0; j<MAX_K; j++)
@@ -280,12 +281,13 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 
 		/* population growth */
 
-		N_exp_growth *= a;
-		N = (int) (N_exp_growth + 0.5);
+		N_exp_growth *= r;
+		N = (int) (fmin(N_max, N_exp_growth) + 0.5);
+		//printf("%i\n",N);
 
 		if (N > 2000000000)
 		{
-			printf("Polyp has grown too large!\n");
+			printf("Clone has grown too large!\n");
 			exit(1);
 		}
 
@@ -456,10 +458,10 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 			//fprintf(DB, ", ");
 		}
 		if ((gen % G ==0) | (gen == gen_max)){
-		remove_duplicates();
-		summary_to_tsv(DB, gen);
-		printf("\b|");
-		fflush(stdout);
+			remove_duplicates();
+			summary_to_tsv(DB, gen);
+			printf("\b|");
+			fflush(stdout);
 		}
 		if (gen == gen_max)
 			printf("\n");
@@ -476,6 +478,10 @@ int simulate(FILE* DB, int N_init, int N_fin, int gen_max, double u, double v, d
 
 
 		//}
+		if(N_g == 0){
+			printf("Error in g=%i\n",gen);
+			exit(1);
+		}
 
 
 	}
@@ -511,6 +517,7 @@ int main(int argc, char **argv)
 	int    d0 = 0; //number of passengers
 	int    d1 = 0; //number of super drivers
 	int    G = -1; //when to output
+	double a = 2; // initial growth rate
 	char *filestem;
 	unsigned int seed = (unsigned) time(NULL);  // r, random seed
 	int verbose = 0;
@@ -533,6 +540,13 @@ int main(int argc, char **argv)
 		case 'n':
 			if (atoi(optarg) > 0)
 				N_init = atoi(optarg);
+			else
+				error_flag++;
+			break;
+
+		case 'a':
+			if (atoi(optarg) > 0)
+				a = atof(optarg);
 			else
 				error_flag++;
 			break;
@@ -622,8 +636,9 @@ int main(int argc, char **argv)
 
 		case 'h':
 			printf("usage: clonex [-N:n:u:v:s:t:g:R:f:r:p:d:o:wh]\n");
-			printf("  N - Final population size (default = %d)\n", N);
+			printf("  N - Maximal population size (default = %d)\n", N);
 			printf("  n - Initial population size (default = %d)\n", N_init);
+			printf("  a - Initial growth rate (default = %g)\n", a);
 			printf("  u - Mutation rate (default = %g)\n", u);
 			printf("  v - Mutation rate passengers (default = u)\n");
 			printf("  s - Selective advantage (default = %g)\n", s);
@@ -671,6 +686,17 @@ int main(int argc, char **argv)
 
 	char summary_filename[255]; //, filename[255];
 
+	sprintf(summary_filename, "%s/sim.par", filestem);
+	FILE *DB;
+	if ((DB = fopen(summary_filename, "w")) == NULL)
+	{
+		fprintf(stderr, "Cannot open output file -- %s\n", summary_filename);
+		exit(1);
+	}
+	for(int i=0; i<argc; i++)
+		fprintf(DB, "%s ", argv[i]);
+	fprintf(DB, "\n");
+	fclose(DB);
 
 
 	int r;
@@ -679,17 +705,14 @@ int main(int argc, char **argv)
 	{
 		printf("Sample %i/%i\n", r+1,R);
 		sprintf(summary_filename, "%s/r%03d.csv", filestem, r+1);
-		FILE *DB;
 		if ((DB = fopen(summary_filename, "w")) == NULL)
 		{
 			fprintf(stderr, "Cannot open output file -- %s\n", summary_filename);
 			exit(1);
 		}
 		printf("%d\n", genes);
-		//fprintf(DB, "pop <- list(");
-		simulate(DB, N_init, N, g, u, v, s, s1, r+1, genes, d0, d1, verbose, G);
-		//fprintf(DB, ")");
-
+		simulate(DB, N_init, N, a, g, u, v, s, s1, r+1, genes, d0, d1, verbose, G);
+		fflush(DB);
 		fclose(DB);
 
 	}
