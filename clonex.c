@@ -8,7 +8,6 @@ Author  : Niko Beerenwinkel
 (c) Niko Beerenwinkel, Moritz Gerstung 2009
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -18,10 +17,10 @@ Author  : Niko Beerenwinkel
 #include <gsl/gsl_sf_gamma.h>
 #include <getopt.h>
 #include <omp.h>
-
+#include "merge.c"
 
 //#define genes 1000000 // dimension (number of loci)
-#define MAX_GENOTYPES 1000000  // max. 10^6
+#define MAX_GENOTYPES 200000  // max. 10^6
 #define MAX_K 1000  // max. no. of mutations per genotype
 
 
@@ -236,7 +235,19 @@ void insert_mutation(struct Genotype *g, int mutation){ // this makes use of the
 	g->mutation[pos]=mutation; // insert
 }
 
-int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose, int G)
+int isNumeric(const char *str) 
+{
+    while(*str != '\0')
+    {
+        if(*str < '0' || *str > '9' )
+            return 0;
+        str++;
+    }
+    return 1;
+}
+
+
+int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose, int G, int X0, int X1, double Xr, int Xm)
 {
 
 	int gen, i, j, c, N; //k;
@@ -257,7 +268,9 @@ int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, d
 
 	//printf("a = %f\n", a);
 	printf("doubling time = %f generations\n", log(2) / log(r));
-
+  if (X0 < gen_max) {
+      printf("clones will decrease between generation %d and %d\n", X0, X1);
+  }
 
 	for (j=0; j<MAX_K; j++)
 		fitness[j] = pow(1.0 + s, (double) j);
@@ -283,7 +296,17 @@ int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, d
 
 		N_exp_growth *= r;
 		N = (int) (fmin(N_max, N_exp_growth) + 0.5);
-		//printf("%i\n",N);
+    if (gen > X0 && gen < X1)
+    {
+        N = N * (1.0 - Xr);
+        N = fmax(N,1);
+        if (Xm == 0)
+        {
+            N_max = N * (1.0 - Xr);
+            N_max = fmax(N_max,1);
+        }
+    }
+		//printf("%i\n",N_max);
 
 		if (N > 2000000000)
 		{
@@ -495,10 +518,6 @@ int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, d
 
 
 
-
-
-
-
 int main(int argc, char **argv)
 {
 
@@ -512,6 +531,10 @@ int main(int argc, char **argv)
 	double s = 1e-2;  // Selective advantage
 	double s1 = 1.5*s; // Selective advantage of super drivers
 	int    g = 1800;  // number of Generations
+  int    X0 = 0; // generation at which population starts decreasing
+  int    X1 = 0; // generation at which population stops decreasing
+  double Xr = 1e-5; // rate at which population decreases
+  int    Xm = 0; // whether cells are allowed to grow after decrease
 	int    R = 1;  // number of simulations Runs
 	int    d = 1000; // number of driver mutations
 	int    d0 = 0; //number of passengers
@@ -526,7 +549,7 @@ int main(int argc, char **argv)
 	int f_flag = 0;
 
 	int c = 0;
-	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:o:G:wh")) != EOF )
+	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:X:Y:Z:L:o:G:wh")) != EOF )
 	{
 		switch(c)
 		{
@@ -566,7 +589,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'o':
-			if (atoi(optarg) > 0)
+			if (isNumeric(optarg) > 0)
 				d1 = atoi(optarg);
 			else
 				error_flag++;
@@ -603,6 +626,34 @@ int main(int argc, char **argv)
 		case 'g':
 			if (atoi(optarg) > 0)
 				g = atoi(optarg);
+			else
+				error_flag++;
+			break;
+
+		case 'X':
+			if (isNumeric(optarg) > 0)
+				X0 = atoi(optarg);
+			else
+				error_flag++;
+			break;
+
+		case 'Y':
+			if (isNumeric(optarg) > 0)
+				X1 = atoi(optarg);
+			else
+				error_flag++;
+			break;
+
+    case 'Z':
+			if (atof(optarg) > 0)
+				Xr = atof(optarg);
+			else
+				error_flag++;
+			break;
+
+    case 'L':
+			if (isNumeric(optarg) > 0)
+				Xm = atoi(optarg);
 			else
 				error_flag++;
 			break;
@@ -644,6 +695,10 @@ int main(int argc, char **argv)
 			printf("  s - Selective advantage (default = %g)\n", s);
 			printf("  t - Selective advantage of other drivers (default = %g)\n", s1);
 			printf("  g - Number of generations (default = %d)\n", g);
+			printf("  X - generation at which population starts decreasing (default = %d)\n", X0);
+			printf("  Y - generation at which population stops decreasing (default = %d)\n", X1);
+			printf("  Z - rate at which population decreases (default = %g)\n", Xr);
+			printf("  L - Population increases after decreasing (default = 0 (no))\n", Xm);
 			printf("  d - Number of drivers (default = %d)\n", d);
 			printf("  p - Number of passengers (default = %d)\n", d0);
 			printf("  o - Number of other drivers (default = %d)\n", d1);
@@ -661,6 +716,12 @@ int main(int argc, char **argv)
 
 	if(G == -1)
 		G = g;
+
+  if (X0 == 0)
+    X0 = g + 1;
+
+  if (X1 == 0)
+    X1 = g + 1;
 
 	if(v == -1.0)
 		v=u;
@@ -685,7 +746,7 @@ int main(int argc, char **argv)
 
 
 	char summary_filename[255]; //, filename[255];
-
+  int i;
 	sprintf(summary_filename, "%s/sim.par", filestem);
 	FILE *DB;
 	if ((DB = fopen(summary_filename, "w")) == NULL)
@@ -693,7 +754,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Cannot open output file -- %s\n", summary_filename);
 		exit(1);
 	}
-	for(int i=0; i<argc; i++)
+	
+  for (i=0; i<argc; i++)
 		fprintf(DB, "%s ", argv[i]);
 	fprintf(DB, "\n");
 	fclose(DB);
@@ -703,6 +765,7 @@ int main(int argc, char **argv)
 	//#pragma omp parallel for private(DB, genotype, geno_prob, geno_count, N_g, fitness, sum_obs, k_abs_freq, k_rel_freq)
 	for (r=0; r<R; r++)
 	{
+    printf("Output format is Gen, NMutClones, cloneID, mutID\n");
 		printf("Sample %i/%i\n", r+1,R);
 		sprintf(summary_filename, "%s/r%03d.csv", filestem, r+1);
 		if ((DB = fopen(summary_filename, "w")) == NULL)
@@ -711,7 +774,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		printf("%d\n", genes);
-		simulate(DB, N_init, N, a, g, u, v, s, s1, r+1, genes, d0, d1, verbose, G);
+		simulate(DB, N_init, N, a, g, u, v, s, s1, r+1, genes, d0, d1, verbose, G, X0, X1, Xr, Xm);
 		fflush(DB);
 		fclose(DB);
 

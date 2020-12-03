@@ -1,3 +1,5 @@
+*Project forked from [here](https://github.com/gerstung-lab/clonex). Contributions include adding the possibility of catastrophic events leading to decreases in population size.*
+
 # clonex
 This archive contains a C programme to calculate a Wright-Fisher model of cancer development.
 
