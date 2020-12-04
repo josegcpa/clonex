@@ -1,4 +1,7 @@
-*Project forked from [here](https://github.com/gerstung-lab/clonex). Contributions include adding the possibility of catastrophic events leading to decreases in population size.*
+*Project forked from [here](https://github.com/gerstung-lab/clonex). Contributions include:*
+
+* *Adding the possibility of catastrophic events leading to decreases in population size*
+* *Adding the possibility of sampling from a gamma distribution of fitness effects (each fitness effect is drawn from `gamma(1,1) * 0.01`)*
 
 # clonex
 This archive contains a C programme to calculate a Wright-Fisher model of cancer development.
@@ -31,6 +34,7 @@ usage: clonex [-N:n:u:v:s:t:g:R:f:r:p:d:o:wh]
   Y - generation at which population stops decreasing (default = 0)
   Z - rate at which population decreases (default = 1e-05)
   L - Population increases after decreasing (default = 0 (no))
+  D - 
   d - Number of drivers (default = 1000)
   p - Number of passengers (default = 0)
   o - Number of other drivers (default = 0)

@@ -47,12 +47,6 @@ double k_rel_freq[MAX_K+1];
 gsl_rng *RNG;  // random number generator
 
 
-
-
-
-
-
-
 void summary_to_R(FILE *DB)
 {
 	int i, k;
@@ -95,6 +89,13 @@ void summary_to_tsv(FILE *DB, int gen)
 		}
 		//fprintf(DB, "\n");
 	}
+}
+
+void fitness_distribution_to_tsv(int d,float *fitness_effects,FILE *file_handle) {
+    int i;
+    for (i=1; i<=d; i++){
+        fprintf(file_handle,"%d,%f\n",i,fitness_effects[i-1]);
+    }
 }
 
 int count_cmp (const struct Genotype *g, const struct Genotype *h)
@@ -247,7 +248,7 @@ int isNumeric(const char *str)
 }
 
 
-int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose, int G, int X0, int X1, double Xr, int Xm)
+int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, double v, double s, double s1, int run, int genes, int d0, int d1, int verbose, int G, int X0, int X1, double Xr, int Xm, int gd, float *fitness_effects)
 {
 
 	int gen, i, j, c, N; //k;
@@ -319,24 +320,40 @@ int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, d
 		double fit = 1.0;
 
 		// compute probabilities:
-		for (i=0; i<N_g; i++)
-		{
-			for (j=0;j<genotype[i].k;j++)
-			{
-				if (genotype[i].mutation[j] > 0 && genotype[i].mutation[j] <= genes - d0)
-				{  
-					if (genotype[i].mutation[j] <= genes - d0 - d1 )
-						fit *= 1 + s;
-					else
-						fit *= 1 + s1;
-				}
-				//      printf("%f\t%i\n", fit, genotype[i].k);
-			}
-			//geno_prob[i] = fitness[genotype[i].k] * genotype[i].count;  // no need to normalize for gsl function
-			geno_prob[i] = fit * genotype[i].count;  // no need to normalize for gsl function
-			fit = 1.0; // reset fitness to 1.0 for next genotype.
-		}
-
+    if (gd == 0) {
+		  for (i=0; i<N_g; i++)
+		  {
+			  for (j=0;j<genotype[i].k;j++)
+			  {
+				  if (genotype[i].mutation[j] > 0 && genotype[i].mutation[j] <= genes - d0)
+				  {
+					  if (genotype[i].mutation[j] <= genes - d0 - d1 )
+						  fit *= 1 + s;
+					  else
+						  fit *= 1 + s1;
+				  }
+				  //      printf("%f\t%i\n", fit, genotype[i].k);
+			  }
+			  //geno_prob[i] = fitness[genotype[i].k] * genotype[i].count;  // no need to normalize for gsl function
+			  geno_prob[i] = fit * genotype[i].count;  // no need to normalize for gsl function
+			  fit = 1.0; // reset fitness to 1.0 for next genotype.
+		  }
+      //we're here!
+    } else {
+      int mut;
+		  for (i=0; i<N_g; i++)
+		  {
+			  for (j=0;j<genotype[i].k;j++)
+			  {
+          mut = genotype[i].mutation[j];
+				  if (mut > 0 && mut <= genes - d0) {
+            fit *= 1 + fitness_effects[mut];
+          }
+			  }
+			  geno_prob[i] = fit * genotype[i].count;  // no need to normalize for gsl function
+			  fit = 1.0; // reset fitness to 1.0 for next genotype.
+		  }
+    }
 
 		for (i=0; i<N_g; i++)
 			geno_count[i] = genotype[i].count;
@@ -515,9 +532,6 @@ int simulate(FILE* DB, int N_init, int N_max, double r, int gen_max, double u, d
 	return 0;
 }
 
-
-
-
 int main(int argc, char **argv)
 {
 
@@ -541,6 +555,7 @@ int main(int argc, char **argv)
 	int    d1 = 0; //number of super drivers
 	int    G = -1; //when to output
 	double a = 2; // initial growth rate
+  int    gd = 0; // should s follow be sample from a gamma dist.
 	char *filestem;
 	unsigned int seed = (unsigned) time(NULL);  // r, random seed
 	int verbose = 0;
@@ -549,7 +564,7 @@ int main(int argc, char **argv)
 	int f_flag = 0;
 
 	int c = 0;
-	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:X:Y:Z:L:o:G:wh")) != EOF )
+	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:X:Y:Z:L:D:o:G:wh")) != EOF )
 	{
 		switch(c)
 		{
@@ -658,6 +673,13 @@ int main(int argc, char **argv)
 				error_flag++;
 			break;
 
+    case 'D':
+      if (isNumeric(optarg) > 0)
+        gd = atoi(optarg);
+      else
+        error_flag++;
+      break;
+
 		case 'R':
 			if (atoi(optarg) >= 0)
 				R = atoi(optarg);
@@ -698,7 +720,8 @@ int main(int argc, char **argv)
 			printf("  X - generation at which population starts decreasing (default = %d)\n", X0);
 			printf("  Y - generation at which population stops decreasing (default = %d)\n", X1);
 			printf("  Z - rate at which population decreases (default = %g)\n", Xr);
-			printf("  L - Population increases after decreasing (default = 0 (no))\n", Xm);
+			printf("  L - Population increases after decreasing (default = %d (no))\n", Xm);
+			printf("  D - Should s be sampled from a gamma distribution (default = %d (no))\n", gd);
 			printf("  d - Number of drivers (default = %d)\n", d);
 			printf("  p - Number of passengers (default = %d)\n", d0);
 			printf("  o - Number of other drivers (default = %d)\n", d1);
@@ -760,6 +783,33 @@ int main(int argc, char **argv)
 	fprintf(DB, "\n");
 	fclose(DB);
 
+  float fitness_effects[d];
+  if (gd == 1) {
+    int i;
+    double a;
+    double b;
+    double sample;
+    a = 1;
+    b = 1;
+    for (i=1; i<=d; i++) {
+      sample = gsl_ran_gamma(RNG,a,b) * s;
+      fitness_effects[i-1] = sample;
+      printf("%f,%f\n",s,sample);
+    }
+    FILE *file_handle;
+    char fe_filename[255];
+
+    sprintf(fe_filename, "%s/fitness_effects", filestem);
+    if ((file_handle = fopen(fe_filename, "w")) == NULL) {
+      fprintf(stderr, "Cannot open output file -- %s\n", fe_filename);
+      exit(1);
+    }
+
+    sprintf(fe_filename, "%s/fitness_effects", filestem);
+    file_handle = fopen(fe_filename,"w");
+    fitness_distribution_to_tsv(d,fitness_effects,file_handle);
+    fclose(file_handle);
+  }
 
 	int r;
 	//#pragma omp parallel for private(DB, genotype, geno_prob, geno_count, N_g, fitness, sum_obs, k_abs_freq, k_rel_freq)
@@ -774,7 +824,8 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		printf("%d\n", genes);
-		simulate(DB, N_init, N, a, g, u, v, s, s1, r+1, genes, d0, d1, verbose, G, X0, X1, Xr, Xm);
+		simulate(DB, N_init, N, a, g, u, v, s, s1, r+1, genes, d0, d1, verbose, G, X0, X1, Xr, Xm,
+             gd,fitness_effects);
 		fflush(DB);
 		fclose(DB);
 
