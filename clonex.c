@@ -794,7 +794,6 @@ int main(int argc, char **argv)
     for (i=1; i<=d; i++) {
       sample = gsl_ran_gamma(RNG,a,b) * s;
       fitness_effects[i-1] = sample;
-      printf("%f,%f\n",s,sample);
     }
     FILE *file_handle;
     char fe_filename[255];
