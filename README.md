@@ -34,7 +34,7 @@ usage: clonex [-N:n:u:v:s:t:g:R:f:r:p:d:o:wh]
   Y - generation at which population stops decreasing (default = 0)
   Z - rate at which population decreases (default = 1e-05)
   L - Population increases after decreasing (default = 0 (no))
-  D - 
+  D - Should s be sampled from a gamma distribution (default = 0 (no))
   d - Number of drivers (default = 1000)
   p - Number of passengers (default = 0)
   o - Number of other drivers (default = 0)
