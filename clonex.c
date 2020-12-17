@@ -564,7 +564,7 @@ int main(int argc, char **argv)
 	int f_flag = 0;
 
 	int c = 0;
-	while((c = getopt(argc, argv, "N:n:u:v:s:t:g:R:f:r:p:d:X:Y:Z:L:D:o:G:wh")) != EOF )
+	while((c = getopt(argc, argv, "N:n:a:u:v:s:t:g:R:f:r:p:d:X:Y:Z:L:D:o:G:wh")) != EOF )
 	{
 		switch(c)
 		{
